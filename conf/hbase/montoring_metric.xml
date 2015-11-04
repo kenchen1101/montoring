@@ -1,0 +1,28 @@
+<SimpleHbase>
+
+	<HBaseTableSchema tableName="montoring_metric" defaultFamily="metric">
+		<HBaseColumnSchema qualifier="metric" typeName="string" />
+		<HBaseColumnSchema qualifier="endpoint" typeName="string" />
+		<HBaseColumnSchema qualifier="tags" typeName="string" />
+		<HBaseColumnSchema qualifier="value" typeName="string" ></HBaseColumnSchema>
+		<HBaseColumnSchema qualifier="timestamp" typeName="string" />
+		<HBaseColumnSchema qualifier="counterType" typeName="string" />
+		<HBaseColumnSchema qualifier="step" typeName="string" />
+	</HBaseTableSchema>
+	
+	<statements>	
+		<statement id="queryByMetric">
+			select where metric equal #metric#
+			<isPropertyAvailable prepend="and" property="endpoint">
+				endpoint equal #endpoint#
+			</isPropertyAvailable>
+			<isPropertyAvailable prepend="and" property="tags">
+				tags equal #tags#
+			</isPropertyAvailable>
+		</statement>	
+		
+	</statements>	
+</SimpleHbase>   
+
+
+
