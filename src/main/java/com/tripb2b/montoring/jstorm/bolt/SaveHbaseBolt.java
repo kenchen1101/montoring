@@ -63,7 +63,7 @@ public class SaveHbaseBolt implements IBasicBolt {
 				SimpleHbaseClient simpleHbaseClient = MontoringSimpleHBaseImpl
 						.getSimpleHbaseClient();
 
-				simpleHbaseClient.putObject(new MontoringMetricRowkey(montoringMetric.getMetric()),
+				simpleHbaseClient.putObject(new MontoringMetricRowkey(montoringMetric.getEndpoint(),montoringMetric.getMetric()),
 						montoringMetric);
 			}
 		} catch (UnsupportedEncodingException e) {

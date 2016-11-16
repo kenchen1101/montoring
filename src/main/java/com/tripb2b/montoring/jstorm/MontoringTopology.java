@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 
+import scala.xml.Utility;
 import backtype.storm.Config;
 import backtype.storm.LocalCluster;
 import backtype.storm.StormSubmitter;
@@ -19,38 +20,59 @@ import backtype.storm.generated.InvalidTopologyException;
 import backtype.storm.generated.TopologyAssignException;
 import backtype.storm.topology.TopologyBuilder;
 
-import com.alibaba.jstorm.client.ConfigExtension;
-import com.alibaba.jstorm.kafka.KafkaSpout;
 import com.alibaba.jstorm.utils.JStormUtils;
 import com.tripb2b.montoring.jstorm.bean.MontoringMetric;
+import com.tripb2b.montoring.jstorm.bolt.JudgeBolt;
 import com.tripb2b.montoring.jstorm.bolt.SaveHbaseBolt;
 import com.tripb2b.montoring.jstorm.spout.HardwareSpout;
-
+import com.tripb2b.montoring.jstorm.utility.utility;
 
 public class MontoringTopology {
-	private static Logger LOG = LoggerFactory.getLogger(MontoringTopology.class);
+	private static Logger LOG = LoggerFactory
+			.getLogger(MontoringTopology.class);
 	private static Map conf = new HashMap<Object, Object>();
-	
+
 	public static void SetBuilder(TopologyBuilder builder, Map conf) {
 		int spout_Parallelism_hint = JStormUtils.parseInt(
-				conf.get(MontoringTopologyDef.TOPOLOGY_SPOUT_PARALLELISM_HINT), 1);
+				conf.get(MontoringTopologyDef.TOPOLOGY_SPOUT_PARALLELISM_HINT),
+				MontoringTopologyDef.DEFAULT_TOPOLOGY_SPOUT_PARALLELISM_HINT);
 		int bolt_Parallelism_hint = JStormUtils.parseInt(
-				conf.get(MontoringTopologyDef.TOPOLOGY_BOLT_PARALLELISM_HINT), 2);
-		
-		
+				conf.get(MontoringTopologyDef.TOPOLOGY_BOLT_PARALLELISM_HINT),
+				MontoringTopologyDef.DEFAULT_TOPOLOGY_BOLT_PARALLELISM_HINT);
+
 		LOG.debug("KafkaMontoring testing local Builder ========================begin===========================");
-		
-		builder.setSpout(MontoringTopologyDef.MONTORING_HARDWARE_SPOUT_NAME, new HardwareSpout(), 1);
-		builder.setBolt(MontoringTopologyDef.MONTORING_HARDWARE_SAVE_HBASE_BOLT_NAME, new SaveHbaseBolt(), 2).shuffleGrouping(MontoringTopologyDef.MONTORING_HARDWARE_SPOUT_NAME);
-		
+
+		builder.setSpout(MontoringTopologyDef.MONTORING_HARDWARE_SPOUT_NAME,
+				new HardwareSpout(), spout_Parallelism_hint);
+
+		// Hbase bolt, the original tuple
+		builder.setBolt(
+				MontoringTopologyDef.MONTORING_HARDWARE_SAVE_HBASE_BOLT_NAME,
+				new SaveHbaseBolt(), bolt_Parallelism_hint).shuffleGrouping(
+				MontoringTopologyDef.MONTORING_HARDWARE_SPOUT_NAME);
+
+		// Judge bolt, the original tuple
+		builder.setBolt(
+				MontoringTopologyDef.MONTORING_ALARM_COMPONENT_JUDGE_BOLT_NAME,
+				new JudgeBolt(), bolt_Parallelism_hint).shuffleGrouping(
+				MontoringTopologyDef.MONTORING_HARDWARE_SPOUT_NAME);
+
+		//Alarm bolt, 接收 Judge发送的 tuple
+		builder.setBolt(
+				MontoringTopologyDef.MONTORING_ALARM_COMPONENT_ALARM_BOLT_NAME,
+				new JudgeBolt(), bolt_Parallelism_hint).shuffleGrouping(
+				MontoringTopologyDef.MONTORING_ALARM_COMPONENT_JUDGE_BOLT_NAME,
+				MontoringTopologyDef.MONTORING_ALARM_COMPONENT_ALARM_BOLT_NAME);
+
 		LOG.debug("KafkaMontoring testing local Builder ========================end===========================");
 
-		boolean kryoEnable = JStormUtils.parseBoolean(conf.get(MontoringTopologyDef.USING_KRYO_SERIALIZATION),
-				false);
+		boolean kryoEnable = JStormUtils.parseBoolean(
+				conf.get(MontoringTopologyDef.USING_KRYO_SERIALIZATION), false);
 		if (kryoEnable == true) {
 			System.out.println("Use Kryo ");
-			boolean useJavaSer = JStormUtils.parseBoolean(
-					conf.get(MontoringTopologyDef.USING_KRYO_JAVA_SERIALIZATION), true);
+			boolean useJavaSer = JStormUtils.parseBoolean(conf
+					.get(MontoringTopologyDef.USING_KRYO_JAVA_SERIALIZATION),
+					true);
 
 			Config.setFallBackOnJavaSerialization(conf, useJavaSer);
 
@@ -58,7 +80,7 @@ public class MontoringTopology {
 		}
 
 		conf.put(Config.TOPOLOGY_DEBUG, false);
-		//conf.put(ConfigExtension.TOPOLOGY_DEBUG_RECV_TUPLE, false);
+		// conf.put(ConfigExtension.TOPOLOGY_DEBUG_RECV_TUPLE, false);
 		conf.put(Config.STORM_LOCAL_MODE_ZMQ, false);
 
 		int ackerNum = JStormUtils.parseInt(
@@ -69,38 +91,41 @@ public class MontoringTopology {
 		// conf.put(Config.TOPOLOGY_MAX_SPOUT_PENDING, 1);
 
 		int workerNum = JStormUtils.parseInt(conf.get(Config.TOPOLOGY_WORKERS),
-				20);
+				MontoringTopologyDef.DEFAULT_TOPOLOGY_WORKERS);
 		conf.put(Config.TOPOLOGY_WORKERS, workerNum);
 	}
 
 	public static void SetLocalTopology() throws Exception {
 		TopologyBuilder builder = new TopologyBuilder();
-		
-		conf.put(MontoringTopologyDef.TOPOLOGY_BOLT_PARALLELISM_HINT, Integer.valueOf(1));
+
+		//Override for local dev environment
+		conf.put(MontoringTopologyDef.TOPOLOGY_BOLT_PARALLELISM_HINT,
+				Integer.valueOf(1));
 
 		SetBuilder(builder, conf);
 
 		LOG.info("KafkaMontoring testing local topology ========================begin===========================");
 		LOG.info("KafkaMontoring log");
 		LocalCluster cluster = new LocalCluster();
-		cluster.submitTopology(getTopologyName(), conf, builder.createTopology());
+		cluster.submitTopology(getTopologyName(), conf,
+				builder.createTopology());
 
 		/*
-		Thread.sleep(60000);
-		
-		cluster.killTopology("KafkaMontoring");
+		 * Thread.sleep(60000);
+		 * 
+		 * cluster.killTopology("KafkaMontoring");
+		 * 
+		 * cluster.shutdown();
+		 */
 
-		cluster.shutdown();
-		*/
-		
 		LOG.debug("KafkaMontoring testing local topology ========================end===========================");
 	}
 
 	public static void SetRemoteTopology() throws AlreadyAliveException,
 			InvalidTopologyException, TopologyAssignException {
-		
+
 		LOG.debug("KafkaMontoring testing remote topology ========================begin===========================");
-		
+
 		TopologyBuilder builder = new TopologyBuilder();
 
 		SetBuilder(builder, conf);
@@ -109,12 +134,10 @@ public class MontoringTopology {
 
 		StormSubmitter.submitTopology(getTopologyName(), conf,
 				builder.createTopology());
-		
+
 		LOG.debug("KafkaMontoring testing remote topology ========================end===========================");
 
 	}
-
-	
 
 	public static void LoadProperty(String prop) {
 		Properties properties = new Properties();
@@ -158,9 +181,11 @@ public class MontoringTopology {
 
 	public static void LoadConf(String arg) {
 		if (arg.endsWith("yaml")) {
-			LoadYaml(arg);
+			//LoadYaml(arg);
+			utility.LoadYaml(arg, conf);
 		} else {
-			LoadProperty(arg);
+			//LoadProperty(arg);
+			utility.LoadProperty(arg, conf);
 		}
 	}
 
@@ -183,7 +208,7 @@ public class MontoringTopology {
 		}
 
 		LoadConf(args[0]);
-		
+
 		LOG.debug("KafkaMontoring conf remote ==========" + conf.toString());
 
 		if (local_mode(conf)) {
@@ -193,9 +218,8 @@ public class MontoringTopology {
 		}
 
 	}
-	
-	public static String getTopologyName()
-	{
+
+	public static String getTopologyName() {
 		String streamName = (String) conf.get(Config.TOPOLOGY_NAME);
 		if (streamName == null) {
 			streamName = "Tripb2b Montoring";

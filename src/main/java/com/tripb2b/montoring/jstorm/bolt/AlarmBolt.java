@@ -11,7 +11,7 @@ import backtype.storm.topology.IBasicBolt;
 import backtype.storm.topology.OutputFieldsDeclarer;
 import backtype.storm.tuple.Tuple;
 
-class AlarmBolt implements IBasicBolt {
+public class AlarmBolt implements IBasicBolt {
 
 	/**
 	 * 
